@@ -83,7 +83,7 @@ class AppManager: ObservableObject {
     private func checkIfProtected(mainJsPath: String) -> Bool {
         do {
             let content = try String(contentsOfFile: mainJsPath, encoding: .utf8)
-            return content.contains("PHANTOM CONTENT PROTECTION")
+            return content.contains("GHOSTFRAME CONTENT PROTECTION")
         } catch {
             return false
         }
@@ -103,11 +103,11 @@ class ManagedApp: ObservableObject, Identifiable {
     @Published var isRunning: Bool
     
     private var backupPath: String {
-        mainJsPath + ".phantom.backup"
+        mainJsPath + ".ghostframe.backup"
     }
     
     private let patchCode = """
-// ==== PHANTOM CONTENT PROTECTION START ====
+// ==== GHOSTFRAME CONTENT PROTECTION START ====
 // Stealth mode: Invisible to screenshots, screen recording, and screen sharing
 import { app } from 'electron';
 
@@ -124,12 +124,12 @@ app.on('browser-window-created', (event, window) => {
             window.setHiddenInMissionControl(true);
         }
     } catch (e) {
-        console.error('[Phantom] Error:', e.message);
+        console.error('[GhostFrame] Error:', e.message);
     }
 });
 
-console.log('[Phantom] Stealth mode activated');
-// ==== PHANTOM CONTENT PROTECTION END ====
+console.log('[GhostFrame] Stealth mode activated');
+// ==== GHOSTFRAME CONTENT PROTECTION END ====
 
 """
     
@@ -249,20 +249,20 @@ struct HeaderView: View {
             ZStack {
                 Circle()
                     .fill(LinearGradient(
-                        colors: [Color(red: 0.6, green: 0.2, blue: 0.9), Color(red: 0.3, green: 0.4, blue: 1.0)],
+                        colors: [Color(red: 0.1, green: 0.8, blue: 0.9), Color(red: 0.4, green: 0.3, blue: 0.95)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ))
                     .frame(width: 44, height: 44)
-                    .shadow(color: Color.purple.opacity(0.4), radius: 8, x: 0, y: 4)
+                    .shadow(color: Color.cyan.opacity(0.4), radius: 8, x: 0, y: 4)
                 
-                Image(systemName: "eye.slash.fill")
-                    .font(.system(size: 20, weight: .semibold))
+                Image(systemName: "rectangle.on.rectangle.slash")
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.white)
             }
             
             VStack(alignment: .leading, spacing: 2) {
-                Text("Phantom")
+                Text("GhostFrame")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                 
@@ -351,11 +351,11 @@ struct AppCardView: View {
                 ZStack {
                     Capsule()
                         .fill(app.isProtected ?
-                              LinearGradient(colors: [Color(red: 0.6, green: 0.2, blue: 0.9), Color(red: 0.3, green: 0.4, blue: 1.0)], startPoint: .leading, endPoint: .trailing) :
+                              LinearGradient(colors: [Color(red: 0.1, green: 0.8, blue: 0.9), Color(red: 0.4, green: 0.3, blue: 0.95)], startPoint: .leading, endPoint: .trailing) :
                               LinearGradient(colors: [Color.gray.opacity(0.25), Color.gray.opacity(0.35)], startPoint: .leading, endPoint: .trailing)
                         )
                         .frame(width: 48, height: 28)
-                        .shadow(color: app.isProtected ? Color.purple.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
+                        .shadow(color: app.isProtected ? Color.cyan.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
                     
                     Circle()
                         .fill(.white)
@@ -427,7 +427,7 @@ struct FooterView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "power")
                         .font(.system(size: 11, weight: .medium))
-                    Text("Quit Phantom")
+                    Text("Quit GhostFrame")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(isHoveringQuit ? .primary : .secondary)
@@ -457,7 +457,7 @@ struct FooterView: View {
 }
 
 // MARK: - Main View
-struct PhantomMainView: View {
+struct GhostFrameMainView: View {
     @StateObject private var appManager = AppManager.shared
     
     var body: some View {
@@ -525,7 +525,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "eye.slash.circle.fill", accessibilityDescription: "Phantom")
+            button.image = NSImage(systemSymbolName: "rectangle.on.rectangle.slash", accessibilityDescription: "GhostFrame")
             button.image?.isTemplate = true
             button.action = #selector(togglePopover)
             button.target = self
@@ -535,7 +535,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentSize = NSSize(width: 340, height: 520)
         popover.behavior = .transient
         popover.animates = true
-        popover.contentViewController = NSHostingController(rootView: PhantomMainView())
+        popover.contentViewController = NSHostingController(rootView: GhostFrameMainView())
     }
     
     @objc func togglePopover() {

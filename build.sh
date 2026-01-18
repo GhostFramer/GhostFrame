@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# Phantom Build Script
-# Builds the Phantom stealth mode manager app
+# GhostFrame Build Script
+# Builds the GhostFrame stealth mode manager app
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
-APP_NAME="Phantom"
+APP_NAME="GhostFrame"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 
-echo "🔮 Building Phantom..."
+echo "👻 Building GhostFrame..."
 
 # Clean build directory
 rm -rf "$BUILD_DIR"
@@ -24,7 +24,7 @@ swiftc -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" \
     -framework Cocoa \
     -framework SwiftUI \
     -O \
-    "$SCRIPT_DIR/Phantom.swift"
+    "$SCRIPT_DIR/GhostFrame.swift"
 
 # Create Info.plist
 echo "📝 Creating Info.plist..."
@@ -34,13 +34,13 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>Phantom</string>
+    <string>GhostFrame</string>
     <key>CFBundleIdentifier</key>
-    <string>com.phantom.stealth</string>
+    <string>com.ghostframe.stealth</string>
     <key>CFBundleName</key>
-    <string>Phantom</string>
+    <string>GhostFrame</string>
     <key>CFBundleDisplayName</key>
-    <string>Phantom</string>
+    <string>GhostFrame</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundleShortVersionString</key>
