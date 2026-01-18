@@ -2,40 +2,41 @@
 
 > 👻 **Stealth Mode Manager for macOS**
 
-A beautiful, modern menu bar app with glass UI that makes your Electron apps invisible to screenshots, screen recordings, and screen sharing.
+A beautiful, modern menu bar app with liquid glass UI that makes your Electron apps invisible to screenshots, screen recordings, and screen sharing.
+
+![GhostFrame](assets/header.png)
 
 ![macOS](https://img.shields.io/badge/macOS-13.0+-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange) ![License](https://img.shields.io/badge/License-MIT-green)
 
-## Features
+## ✨ Features
 
+### Core Features
 - **🛡️ Content Protection** - Makes app windows appear black in screenshots and screen recordings
-- **👻 Dock Hiding** - Hides app icons from the macOS dock
+- **👻 Dock Hiding** - Optional: Hide app icons from the macOS dock when running
 - **🎯 Mission Control Hiding** - Apps won't appear in Mission Control
-- **🎨 Beautiful Glass UI** - Native macOS vibrancy/blur effects with cyan-purple gradient
-- **⚡ One-Click Toggle** - Enable/disable protection with animated switches
-- **🔄 Auto-Restart** - Properly restarts apps after changes using NSWorkspace APIs
-- **📱 Multi-App Support** - Works with many Electron-based apps
+- **🔄 Auto-Restart** - One-click restart for changes to take effect
 
-## Supported Apps
+### User Experience
+- **📱 Add Any Electron App** - Browse and add apps from your Applications folder
+- **📝 Manage Your List** - Add, remove, and configure apps as needed
+- **⚙️ Per-App Settings** - Configure dock hiding individually for each app
+- **💾 Persistent Settings** - Your configuration is saved automatically
 
-| App | Status |
-|-----|--------|
-| Antigravity | Supported |
-| Visual Studio Code | Supported |
-| Cursor | Supported |
-| Windsurf | Supported |
-| Slack | Supported |
-| Discord | Supported |
-| Notion | Supported |
-| Figma | Supported |
-| Obsidian | Supported |
-| Postman | Supported |
-| Spotify | Supported |
-| WhatsApp | Supported |
-| Telegram | Supported |
-| 1Password | Supported |
+### Settings & Customization
+- **🎨 Liquid Glass UI** - Beautiful native macOS vibrancy effects
+- **🔒 Show/Hide Menu Bar Icon** - Control GhostFrame's visibility
+- **⌨️ Keyboard Shortcuts** - Quick access to all features:
+  - Toggle GhostFrame window
+  - Toggle stealth mode for all apps
+  - Minimize/Maximize window
 
-## Installation
+## 📸 Screenshots
+
+| Menu Bar View | Add Apps | Settings |
+|---------------|----------|----------|
+| Main control panel with app toggles | Browse and add Electron apps | Configure shortcuts & preferences |
+
+## 🚀 Installation
 
 ### Build from Source
 
@@ -61,43 +62,136 @@ open /Applications/GhostFrame.app
 ./build.sh && cp -r build/GhostFrame.app /Applications/ && open /Applications/GhostFrame.app
 ```
 
-## Usage
+## 📖 Usage
 
-1. **Launch GhostFrame** - Look for the icon in your menu bar
-2. **Toggle Protection** - Click the switch next to any app
-3. **Restart App** - Click "Restart Now" when prompted
-4. **Enjoy Privacy** - Your app is now invisible to screen capture!
+### Getting Started
 
-## How It Works
+1. **Launch GhostFrame** - Click the 👻 icon in your menu bar
+2. **Add Apps** - Click "Add App" to browse available Electron applications
+3. **Enable Protection** - Toggle the switch next to any app
+4. **Configure Options** - Click the ⋯ button for per-app settings:
+   - Toggle "Hide from Dock"
+   - Restart the app
+   - Remove from list
+5. **Restart App** - Click "Restart Now" when prompted for changes to take effect
+
+### Settings
+
+Access settings via the ⚙️ button:
+
+- **Show menu bar icon** - Hide GhostFrame from menu bar (use shortcut to access)
+- **Launch at login** - Start GhostFrame when you log in
+- **Keyboard Shortcuts** - Customize your shortcuts
+
+### Keyboard Shortcuts (Default)
+
+| Action | Shortcut |
+|--------|----------|
+| Toggle GhostFrame | ⌘⇧G |
+| Toggle Stealth Mode | ⌘⇧S |
+| Minimize Window | ⌘⇧M |
+| Maximize Window | ⌘⇧F |
+
+## 🔧 How It Works
 
 GhostFrame patches Electron apps to enable macOS content protection APIs:
 
 ```javascript
 // Applied to each Electron app
-window.setContentProtection(true);      // Windows appear black in screen capture
-window.setHiddenInMissionControl(true); // Hidden from Mission Control
-app.dock.hide();                        // Removes dock icon
+import { app } from 'electron';
+
+// Optional: Hide dock icon
+app.dock.hide();
+
+// Apply content protection to all windows
+app.on('browser-window-created', (event, window) => {
+    window.setContentProtection(true);
+    window.setHiddenInMissionControl(true);
+});
 ```
 
-Changes are stored in a backup file (`.ghostframe.backup`) and can be reverted anytime.
+### What Gets Protected
 
-## UI Features
+| Feature | Description |
+|---------|-------------|
+| `setContentProtection(true)` | Windows appear black in screenshots & recordings |
+| `setHiddenInMissionControl(true)` | Hidden from Mission Control |
+| `app.dock.hide()` | Removes dock icon (optional per-app) |
 
-- **Glass/Vibrancy Effect** - Uses `NSVisualEffectView` with `.hudWindow` material
-- **Animated Toggles** - Spring animations for smooth interactions
-- **Hover Effects** - Cards scale and shadow on hover
-- **Status Indicators** - Green/orange dots show protection state
-- **Running State** - Blue indicator shows if app is running
+### Data Storage
 
-## Requirements
+- **Backup files**: `*.ghostframe.backup` (alongside original files)
+- **Settings**: `~/Library/Preferences/com.ghostframe.stealth.plist`
+- All changes can be reverted by toggling protection off
+
+## 🎨 UI Features
+
+- **Liquid Glass Effect** - Uses `NSVisualEffectView` with `.hudWindow` material
+- **Animated Toggles** - Smooth spring animations
+- **Hover Effects** - Interactive card animations
+- **Status Indicators** - Green/orange dots for protection status
+- **Running State** - Blue indicator for running apps
+- **Search** - Filter apps when adding new ones
+
+## 💻 Supported Apps
+
+GhostFrame automatically detects Electron-based applications including:
+
+- Antigravity
+- Visual Studio Code
+- Cursor
+- Windsurf
+- Slack
+- Discord
+- Notion
+- Figma
+- Obsidian
+- Postman
+- Spotify
+- WhatsApp
+- Telegram
+- 1Password
+- *...and any other Electron app!*
+
+## 📋 Requirements
 
 - macOS 13.0 (Ventura) or later
 - Xcode Command Line Tools (for building)
 
-## License
+## 🛠️ Development
+
+### Project Structure
+
+```
+GhostFrame/
+├── GhostFrame.swift    # Main application source
+├── build.sh            # Build script
+├── README.md           # Documentation
+└── assets/             # Icons and images
+```
+
+### Building
+
+```bash
+# Development build
+./build.sh
+
+# The app will be at build/GhostFrame.app
+```
+
+## 📄 License
 
 MIT License - Feel free to use, modify, and distribute.
 
-## Disclaimer
+## ⚠️ Disclaimer
 
-This tool is intended for privacy protection during legitimate use cases like online assessments, presentations, or personal privacy. Use responsibly and ethically.
+This tool is intended for privacy protection during legitimate use cases such as:
+- Online assessments and exams
+- Presentations and demos
+- Personal privacy
+
+Use responsibly and ethically. The developers are not responsible for misuse.
+
+---
+
+Made with ❤️ for privacy
