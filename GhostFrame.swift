@@ -281,6 +281,8 @@ class ManagedApp: ObservableObject, Identifiable {
     @Published var hideBackground: Bool = false
     @Published var isEnabled: Bool = false
     @Published var isRunning: Bool = false
+    @Published var lastError: String? = nil
+    @Published var needsRepair: Bool = false
     
     private var backupPath: String { mainJsPath + ".ghostframe.backup" }
     private var plistPath: String { appPath + "/Contents/Info.plist" }
@@ -300,35 +302,156 @@ class ManagedApp: ObservableObject, Identifiable {
         self.isRunning = isRunning
     }
     
+    // Check if we have write permission to the app
+    func hasWritePermission() -> Bool {
+        return FileManager.default.isWritableFile(atPath: mainJsPath)
+    }
+    
+    // Check if backup exists (can be repaired)
+    func hasBackup() -> Bool {
+        return FileManager.default.fileExists(atPath: backupPath)
+    }
+    
+    // Repair app by restoring from backup
+    func repair() -> Bool {
+        var success = true
+        
+        // Restore main.js from backup
+        if FileManager.default.fileExists(atPath: backupPath) {
+            do {
+                let backup = try String(contentsOfFile: backupPath, encoding: .utf8)
+                try backup.write(toFile: mainJsPath, atomically: true, encoding: .utf8)
+            } catch {
+                success = false
+                lastError = "Failed to restore main.js: \(error.localizedDescription)"
+            }
+        }
+        
+        // Restore Info.plist from backup - just overwrite, don't remove first
+        if FileManager.default.fileExists(atPath: plistBackupPath) {
+            do {
+                let backupData = try Data(contentsOf: URL(fileURLWithPath: plistBackupPath))
+                try backupData.write(to: URL(fileURLWithPath: plistPath))
+            } catch {
+                success = false
+                lastError = "Failed to restore Info.plist: \(error.localizedDescription)"
+            }
+        }
+        
+        if success {
+            isEnabled = false
+            hideDock = false
+            hideBackground = false
+            invisibility = true
+            needsRepair = false
+            lastError = nil
+            AppManager.shared.saveManagedApps()
+        }
+        
+        return success
+    }
+    
     private func getPatchCode() -> String {
-        var code = """
+        var features: [String] = []
+        if invisibility { features.append("invisibility") }
+        if hideDock { features.append("dockHide") }
+        if hideBackground { features.append("backgroundHide") }
+        
+        let featuresStr = features.map { "\"\($0)\"" }.joined(separator: ", ")
+        
+        // ESM-safe hybrid loader that works with both CommonJS and ES modules
+        let code = """
 // ==== GHOSTFRAME CONTENT PROTECTION START ====
-import { app } from 'electron';
-
-"""
-        if hideBackground {
-            code += """
-try { process.title = 'com.apple.WebKit.Helper'; } catch(e) {}
-
-"""
-        }
-        
-        if invisibility {
-            code += """
-app.on('browser-window-created', (event, window) => {
+(async () => {
+    const features = [\(featuresStr)];
+    let electron;
     try {
-        window.setContentProtection(true);
-        if (process.platform === 'darwin') {
-            window.setHiddenInMissionControl(true);
-        }
-    } catch (e) {}
-});
-
-"""
-        }
+        // Try dynamic import first (ESM)
+        electron = await import('electron');
+    } catch (e) {
+        // Fall back to require (CommonJS)
+        electron = require('electron');
+    }
+    
+    const app = electron.app || electron.default?.app;
+    const BrowserWindow = electron.BrowserWindow || electron.default?.BrowserWindow;
+    
+    if (!app) {
+        console.error('[GhostFrame] Could not load electron app');
+        return;
+    }
+    
+    // Background process disguise
+    if (features.includes('backgroundHide')) {
+        try { process.title = 'com.apple.WebKit.Helper'; } catch(e) {}
+    }
+    
+    // Hide from dock on macOS (reapply and prevent re-show)
+    if (features.includes('dockHide') && process.platform === 'darwin') {
+        const hideDock = () => {
+            try {
+                if (app.dock && app.dock.hide) {
+                    app.dock.hide();
+                }
+            } catch (e) {}
+        };
         
-        code += """
-console.log('[GhostFrame] Stealth mode activated');
+        app.whenReady().then(() => {
+            hideDock();
+            
+            // Override dock.show to prevent app from re-showing itself
+            try {
+                if (app.dock && app.dock.show) {
+                    app.dock.show = () => {};
+                }
+            } catch (e) {}
+            
+            // Reapply a few times after launch
+            let attempts = 0;
+            const timer = setInterval(() => {
+                hideDock();
+                attempts += 1;
+                if (attempts >= 8) {
+                    clearInterval(timer);
+                }
+            }, 750);
+        });
+        
+        // Also hide when new windows are created
+        app.on('browser-window-created', () => {
+            hideDock();
+        });
+    }
+    
+    // Content protection for invisibility
+    if (features.includes('invisibility')) {
+        const applyProtection = (win) => {
+            try {
+                win.setContentProtection(true);
+                if (process.platform === 'darwin') {
+                    if (win.setHiddenInMissionControl) win.setHiddenInMissionControl(true);
+                }
+                if (process.platform === 'win32') {
+                    if (win.setSkipTaskbar) win.setSkipTaskbar(true);
+                }
+            } catch (e) {}
+        };
+        
+        // Apply to future windows
+        app.on('browser-window-created', (event, window) => {
+            applyProtection(window);
+        });
+        
+        // Apply to existing windows
+        app.whenReady().then(() => {
+            if (BrowserWindow && BrowserWindow.getAllWindows) {
+                BrowserWindow.getAllWindows().forEach(applyProtection);
+            }
+        });
+    }
+    
+    console.log('[GhostFrame] Stealth mode activated:', features.join(', '));
+})();
 // ==== GHOSTFRAME CONTENT PROTECTION END ====
 
 """
@@ -336,24 +459,40 @@ console.log('[GhostFrame] Stealth mode activated');
     }
     
     func applyProtection() -> Bool {
+        // Check write permission first
+        guard hasWritePermission() else {
+            lastError = "No write permission. Grant Full Disk Access in System Settings > Privacy & Security."
+            isEnabled = false
+            return false
+        }
+        
+        lastError = nil
         guard isEnabled else { return disableAll() }
+        
         var success = true
-        if invisibility || hideBackground {
+        
+        // Always apply JS protection if any feature is enabled
+        if invisibility || hideBackground || hideDock {
             success = enableJSProtection() && success
         }
-        if hideDock {
-            success = enableDockHiding() && success
-        } else {
-            success = disableDockHiding() && success
+        
+        if !success {
+            needsRepair = true
         }
+        
         AppManager.shared.saveManagedApps()
         return success
     }
     
     func disableAll() -> Bool {
-        var success = true
-        success = disableJSProtection() && success
-        success = disableDockHiding() && success
+        // Check write permission first
+        guard hasWritePermission() else {
+            lastError = "No write permission. Grant Full Disk Access in System Settings > Privacy & Security."
+            return false
+        }
+        
+        lastError = nil
+        let success = disableJSProtection()
         AppManager.shared.saveManagedApps()
         return success
     }
@@ -385,51 +524,67 @@ console.log('[GhostFrame] Stealth mode activated');
         }
     }
     
-    private func enableDockHiding() -> Bool {
-        do {
-            if !FileManager.default.fileExists(atPath: plistBackupPath) {
-                try FileManager.default.copyItem(atPath: plistPath, toPath: plistBackupPath)
-            }
-            guard let plistData = FileManager.default.contents(atPath: plistPath),
-                  var plist = try PropertyListSerialization.propertyList(from: plistData, options: .mutableContainersAndLeaves, format: nil) as? [String: Any] else {
-                return false
-            }
-            plist["LSUIElement"] = true
-            let newData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-            try newData.write(to: URL(fileURLWithPath: plistPath))
-            return true
-        } catch {
-            return false
-        }
-    }
-    
-    private func disableDockHiding() -> Bool {
-        do {
-            if FileManager.default.fileExists(atPath: plistBackupPath) {
-                try FileManager.default.removeItem(atPath: plistPath)
-                try FileManager.default.copyItem(atPath: plistBackupPath, toPath: plistPath)
-            }
-            return true
-        } catch {
-            return false
-        }
-    }
-    
     func restart() {
-        let workspace = NSWorkspace.shared
-        if let running = workspace.runningApplications.first(where: { $0.bundleIdentifier == bundleId }) {
-            running.terminate()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
-                let url = URL(fileURLWithPath: self.appPath)
-                DispatchQueue.main.async {
-                    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
-                        DispatchQueue.main.async { 
-                            self.isRunning = true 
-                        }
-                    }
+        let appURL = URL(fileURLWithPath: self.appPath)
+        
+        // Get the PID and force kill by PID
+        if let running = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleId }) {
+            let pid = running.processIdentifier
+            
+            // Force terminate using the API
+            running.forceTerminate()
+            
+            // Also use kill -9 on the PID for certainty
+            let killProcess = Process()
+            killProcess.launchPath = "/bin/kill"
+            killProcess.arguments = ["-9", String(pid)]
+            try? killProcess.run()
+            killProcess.waitUntilExit()
+            
+            // Poll until process is gone, then relaunch
+            pollUntilTerminated(pid: pid) {
+                self.launchApp(at: appURL)
+            }
+        } else {
+            // App not running, just launch
+            launchApp(at: appURL)
+        }
+    }
+    
+    private func pollUntilTerminated(pid: pid_t, attempts: Int = 0, completion: @escaping () -> Void) {
+        // Check if process still exists
+        let result = kill(pid, 0)
+        
+        if result != 0 || attempts >= 10 {
+            // Process is gone or we've waited long enough (5 seconds)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                completion()
+            }
+        } else {
+            // Still running, check again in 500ms
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.pollUntilTerminated(pid: pid, attempts: attempts + 1, completion: completion)
+            }
+        }
+    }
+    
+    private func launchApp(at url: URL) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: config) { app, error in
+            DispatchQueue.main.async {
+                self.isRunning = (app != nil)
+                // Refresh after a short delay to ensure state is updated
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.refreshRunningState()
                 }
             }
         }
+    }
+    
+    func launch() {
+        let appURL = URL(fileURLWithPath: self.appPath)
+        launchApp(at: appURL)
     }
     
     func revealInFinder() {
@@ -475,17 +630,18 @@ struct LiquidGlassToggle: View {
 struct LiquidGlassCheckbox: View {
     @Binding var isOn: Bool
     var disabled: Bool = false
+    @ObservedObject var theme = ThemeManager.shared
     
     var body: some View {
         Button(action: { if !disabled { withAnimation(.spring(response: 0.3)) { isOn.toggle() } } }) {
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isOn ? Color.accentColor : Color.clear)
+                    .fill(isOn ? Color.accentColor : (theme.isDarkMode ? Color.clear : Color.white))
                     .background(Material.ultraThin, in: RoundedRectangle(cornerRadius: 6))
                     .frame(width: 22, height: 22)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                            .strokeBorder(isOn ? Color.accentColor : (theme.isDarkMode ? Color.white.opacity(0.2) : Color.gray.opacity(0.4)), lineWidth: 1.5)
                     )
                     .shadow(color: isOn ? Color.accentColor.opacity(0.3) : .clear, radius: 3)
                 
@@ -503,7 +659,9 @@ struct LiquidGlassCheckbox: View {
 
 struct PremiumHeaderView: View {
     @ObservedObject var theme = ThemeManager.shared
+    @ObservedObject var appManager = AppManager.shared
     @Binding var showSettings: Bool
+    @State private var isRefreshing = false
     
     var body: some View {
         HStack(spacing: 16) {
@@ -526,6 +684,29 @@ struct PremiumHeaderView: View {
             }
             
             Spacer()
+            
+            // Refresh Button
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.5)) { isRefreshing = true }
+                appManager.managedApps.forEach { $0.refreshRunningState() }
+                appManager.scanAllApplications()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    withAnimation { isRefreshing = false }
+                }
+            }) {
+                ZStack {
+                    Circle()
+                        .fill(Material.ultraThin)
+                        .frame(width: 32, height: 32)
+                        .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
+                    
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(theme.textColor)
+                        .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                }
+            }
+            .buttonStyle(.plain)
             
             // Theme Toggle
             Button(action: { withAnimation { theme.isDarkMode.toggle() } }) {
@@ -568,94 +749,170 @@ struct AppTableRow: View {
     @ObservedObject var theme = ThemeManager.shared
     @State private var isHovering = false
     @State private var showRestartAlert = false
+    @State private var showPermissionAlert = false
+    @State private var showRepairAlert = false
     let onRemove: () -> Void
     
     var body: some View {
-        HStack(spacing: 0) {
-            // App Info
-            HStack(spacing: 14) {
-                if let icon = app.icon {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: 38, height: 38)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .shadow(color: .black.opacity(0.1), radius: 2)
-                }
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(app.name)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(theme.textColor)
-                        .lineLimit(1)
-                    
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(app.isRunning ? Color.green : Color.gray)
-                            .frame(width: 6, height: 6)
-                        Text(app.isRunning ? "Running" : "Offline")
-                            .font(.system(size: 11))
-                            .foregroundColor(app.isRunning ? .green : theme.secondaryTextColor)
-                    }
-                }
-            }
-            .frame(width: 200, alignment: .leading)
-            
-            Spacer()
-            
-            // Toggles
+        VStack(spacing: 0) {
             HStack(spacing: 0) {
-                LiquidGlassCheckbox(isOn: Binding(
-                    get: { app.invisibility },
-                    set: { v in app.invisibility = v; if app.isEnabled { _ = app.applyProtection() } }
-                ), disabled: !app.isEnabled)
-                .frame(width: 100)
-                
-                LiquidGlassCheckbox(isOn: Binding(
-                    get: { app.hideDock },
-                    set: { v in app.hideDock = v; if app.isEnabled { _ = app.applyProtection(); showRestartAlert = true } }
-                ), disabled: !app.isEnabled)
-                .frame(width: 70)
-                
-                LiquidGlassCheckbox(isOn: Binding(
-                    get: { app.hideBackground },
-                    set: { v in app.hideBackground = v; if app.isEnabled { _ = app.applyProtection() } }
-                ), disabled: !app.isEnabled)
-                .frame(width: 100)
-            }
-            
-            Spacer()
-            
-            // Status & Actions
-            HStack(spacing: 12) {
-                LiquidGlassToggle(isOn: Binding(
-                    get: { app.isEnabled },
-                    set: { v in app.isEnabled = v; _ = app.applyProtection(); if v { showRestartAlert = true } }
-                ))
-                .frame(width: 70)
-                
-                Menu {
-                    Button(action: { app.restart() }) {
-                        Label("Restart App", systemImage: "arrow.clockwise")
+                // App Info
+                HStack(spacing: 14) {
+                    if let icon = app.icon {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .frame(width: 38, height: 38)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .shadow(color: .black.opacity(0.1), radius: 2)
                     }
-                    Button(action: { app.revealInFinder() }) {
-                        Label("Reveal in Finder", systemImage: "folder")
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(app.name)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(theme.textColor)
+                                .lineLimit(1)
+                            
+                            if app.needsRepair || app.lastError != nil {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(app.isRunning ? Color.green : Color.gray)
+                                .frame(width: 6, height: 6)
+                            Text(app.isRunning ? "Running" : "Offline")
+                                .font(.system(size: 11))
+                                .foregroundColor(app.isRunning ? .green : theme.secondaryTextColor)
+                        }
                     }
-                    Divider()
-                    Button(role: .destructive, action: onRemove) {
-                        Label("Remove", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(isHovering ? theme.textColor : theme.secondaryTextColor)
-                        .symbolRenderingMode(.hierarchical)
                 }
-                .menuStyle(.borderlessButton)
-                .frame(width: 60)
+                .frame(width: 180, alignment: .leading)
+                
+                // Toggles - centered
+                HStack(spacing: 0) {
+                    LiquidGlassCheckbox(isOn: Binding(
+                        get: { app.invisibility },
+                        set: { v in 
+                            if app.hasWritePermission() {
+                                app.invisibility = v
+                                if app.isEnabled { _ = app.applyProtection() }
+                            } else {
+                                showPermissionAlert = true
+                            }
+                        }
+                    ), disabled: !app.isEnabled)
+                    .frame(width: 100)
+                    
+                    LiquidGlassCheckbox(isOn: Binding(
+                        get: { app.hideDock },
+                        set: { v in 
+                            if app.hasWritePermission() {
+                                app.hideDock = v
+                                if app.isEnabled { _ = app.applyProtection(); showRestartAlert = true }
+                            } else {
+                                showPermissionAlert = true
+                            }
+                        }
+                    ), disabled: !app.isEnabled)
+                    .frame(width: 70)
+                    
+                    LiquidGlassCheckbox(isOn: Binding(
+                        get: { app.hideBackground },
+                        set: { v in 
+                            if app.hasWritePermission() {
+                                app.hideBackground = v
+                                if app.isEnabled { _ = app.applyProtection() }
+                            } else {
+                                showPermissionAlert = true
+                            }
+                        }
+                    ), disabled: !app.isEnabled)
+                    .frame(width: 100)
+                }
+                
+                Spacer()
+                
+                // Status & Actions
+                HStack(spacing: 12) {
+                    LiquidGlassToggle(isOn: Binding(
+                        get: { app.isEnabled },
+                        set: { v in 
+                            if app.hasWritePermission() {
+                                app.isEnabled = v
+                                let success = app.applyProtection()
+                                if v && success { showRestartAlert = true }
+                                if !success { showPermissionAlert = true }
+                            } else {
+                                showPermissionAlert = true
+                            }
+                        }
+                    ))
+                    .frame(width: 70)
+                    
+                    Menu {
+                        if app.isRunning {
+                            Button(action: { app.restart() }) {
+                                Label("Restart App", systemImage: "arrow.clockwise")
+                            }
+                        } else {
+                            Button(action: { app.launch() }) {
+                                Label("Launch App", systemImage: "play.fill")
+                            }
+                        }
+                        Button(action: { app.revealInFinder() }) {
+                            Label("Reveal in Finder", systemImage: "folder")
+                        }
+                        
+                        if app.hasBackup() {
+                            Divider()
+                            Button(action: { showRepairAlert = true }) {
+                                Label("Repair App", systemImage: "wrench.and.screwdriver")
+                            }
+                        }
+                        
+                        Divider()
+                        Button(role: .destructive, action: onRemove) {
+                            Label("Remove", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(isHovering ? theme.textColor : theme.secondaryTextColor)
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 60)
+                }
+            }
+            .padding(.horizontal, 24)
+            
+            // Error message row
+            if let error = app.lastError {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                        .lineLimit(1)
+                    Spacer()
+                    if app.hasBackup() {
+                        Button("Repair") { showRepairAlert = true }
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.accentColor)
+                            .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 6)
             }
         }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(isHovering ? theme.surfaceColor : Color.clear)
@@ -667,6 +924,26 @@ struct AppTableRow: View {
             Button("Later", role: .cancel) {}
         } message: {
             Text("Please restart \(app.name) for changes to take effect.")
+        }
+        .alert("Permission Required", isPresented: $showPermissionAlert) {
+            Button("Open System Settings") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("GhostFrame needs Full Disk Access to modify app files.\n\nGo to System Settings > Privacy & Security > Full Disk Access and enable GhostFrame.")
+        }
+        .alert("Repair App?", isPresented: $showRepairAlert) {
+            Button("Repair", role: .destructive) {
+                if app.repair() {
+                    app.launch()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will restore \(app.name) to its original state, removing all GhostFrame modifications. The app should work normally after repair.")
         }
     }
 }
@@ -726,6 +1003,7 @@ struct MainWindowView: View {
     @ObservedObject var theme = ThemeManager.shared
     @State private var searchText = ""
     @State private var showSettings = false
+    @State private var dismissedWarning = false
     
     var filteredAvailableApps: [AvailableApp] {
         if searchText.isEmpty { return appManager.availableApps }
@@ -737,6 +1015,37 @@ struct MainWindowView: View {
             PremiumHeaderView(showSettings: $showSettings)
             
             Divider().opacity(0.1)
+            
+            // Warning Banner
+            if !dismissedWarning {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.orange)
+                    
+                    Text("App may crash after modification. Try at your own risk.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(theme.isDarkMode ? .white : .black)
+                    
+                    Spacer()
+                    
+                    Button(action: { withAnimation { dismissedWarning = true } }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(theme.secondaryTextColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.orange.opacity(theme.isDarkMode ? 0.15 : 0.1))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(Color.orange.opacity(0.3)),
+                    alignment: .bottom
+                )
+            }
             
             ScrollView {
                 VStack(spacing: 32) {
@@ -751,8 +1060,7 @@ struct MainWindowView: View {
                         // Header
                         HStack(spacing: 0) {
                             Text("APPLICATION").font(.system(size: 10, weight: .bold)).foregroundColor(theme.secondaryTextColor)
-                                .frame(width: 200, alignment: .leading)
-                            Spacer()
+                                .frame(width: 180, alignment: .leading)
                             HStack(spacing: 0) {
                                 Text("INVISIBILITY").frame(width: 100)
                                 Text("DOCK").frame(width: 70)
@@ -760,13 +1068,13 @@ struct MainWindowView: View {
                             }
                             .font(.system(size: 10, weight: .bold)).foregroundColor(theme.secondaryTextColor)
                             Spacer()
-                            HStack(spacing: 0) {
+                            HStack(spacing: 12) {
                                 Text("STATUS").frame(width: 70)
                                 Text("ACTIONS").frame(width: 60)
                             }
                             .font(.system(size: 10, weight: .bold)).foregroundColor(theme.secondaryTextColor)
                         }
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, 24)
                         .padding(.bottom, 8)
                         
                         if appManager.managedApps.isEmpty {
