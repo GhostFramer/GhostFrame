@@ -75,7 +75,8 @@ For background disguise, it changes the `process.title` to a system-like name.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+
+License. See [LICENSE](LICENSE) for details.
 
 ## Author
 
