@@ -1,3 +1,5 @@
+![GhostFrame](assets/header.png)
+
 # GhostFrame
 
 **GhostFrame** is a premium stealth mode manager for macOS that makes Electron-based applications invisible to screen recording, screen sharing, and screenshots. It also provides advanced features like Dock hiding and background process disguising.
@@ -69,7 +71,7 @@ cp -r build/GhostFrame.app /Applications/
 
 GhostFrame patches Electron applications by injecting `setContentProtection(true)` into the app's main process. This uses macOS's native content protection API to prevent the window from being captured.
 
-For Dock hiding, it modifies the app's `Info.plist` to set `LSUIElement = true`.
+For Dock hiding, it uses `app.dock.hide()` at runtime to remove the icon from the macOS Dock.
 
 For background disguise, it changes the `process.title` to a system-like name.
 
