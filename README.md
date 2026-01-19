@@ -1,56 +1,82 @@
-# GhostFrame 👻
+# GhostFrame
 
-**GhostFrame** is a premium stealth mode manager for macOS that allows you to make Electron-based applications invisible to screen recording, screen sharing, and screenshots. It also provides advanced features like Dock hiding and background process disguising.
+**GhostFrame** is a premium stealth mode manager for macOS that makes Electron-based applications invisible to screen recording, screen sharing, and screenshots. It also provides advanced features like Dock hiding and background process disguising.
 
-![GhostFrame Header](assets/header.png)
+## Features
 
-## ✨ Features
+- **Invisibility Mode**: Makes app windows completely invisible to screen capture software (OBS, Zoom, QuickTime, screenshots) while remaining visible to you
+- **Dock Hiding**: Completely hide the application icon from the macOS Dock
+- **Background Disguise**: Disguise the process name in Activity Monitor to look like a system process
+- **Premium UI**: Native SwiftUI interface with liquid-glass aesthetic and dark/light mode support
+- **Menu Bar Access**: Quick toggle controls right from your menu bar
 
-- **Stealth Mode (Invisibility)**: Makes app windows completely invisible to screen capture software (OBS, Zoom, QuickTime, screenshots) while remaining visible to you.
-- **Dock Hiding**: Completely hide the application icon from the macOS Dock.
-- **Background Disguise**: Disguise the process name in Activity Monitor to look like a system process.
-- **Premium UI**: A native, liquid-glass aesthetic designed for macOS.
-- **Menu Bar Access**: Quick toggle controls right from your menu bar.
+## Installation
 
-## 🚀 Installation
+1. Download the latest `GhostFrame.dmg` from the [Releases](https://github.com/ghostframer/GhostFrame/releases) page
+2. Open the DMG and drag **GhostFrame.app** to your **Applications** folder
+3. Launch GhostFrame
 
-1. Download the latest `GhostFrame.dmg` from the [Releases](https://github.com/your-username/GhostFrame/releases) page.
-2. Drag **GhostFrame.app** to your **Applications** folder.
-3. Launch GhostFrame.
+## Usage
 
-## 🛠 Usage
-
-1. Open GhostFrame.
-2. The "Available Applications" section will list all compatible Electron apps found on your system.
-3. Click **Add** next to an app (e.g., VS Code, Discord, Slack).
+1. Open GhostFrame from your Applications folder or menu bar
+2. The **Available Applications** section lists all compatible Electron apps on your system
+3. Click **Add** next to an app (e.g., VS Code, Discord, Slack, Cursor)
 4. Configure your protection settings:
-   - **Invis (Invisibility)**: Check this to block screen capture.
-   - **Dock**: Check this to hide the app from the Dock (requires app restart).
-   - **Backg (Background)**: Check this to disguise the process name.
-5. Toggle the **Status** switch to **ON**.
-6. **Restart the target app** for changes to take effect.
+   - **INVISIBILITY**: Enable to block screen capture
+   - **DOCK**: Enable to hide the app from the Dock (requires app restart)
+   - **BACKGROUND**: Enable to disguise the process name
+5. Toggle the **STATUS** switch to **ON**
+6. Use the **Actions** menu (three dots) to restart the target app
 
-## ⚠️ Important Notes
+## Supported Applications
 
-- **Restart Required**: Most changes (especially Dock hiding and Stealth Mode) require the target application to be fully restarted. Use the "Restart App" option in the actions menu (three dots).
-- **Electron Only**: Currently, GhostFrame supports applications built with the Electron framework (VS Code, Discord, Slack, Obsidian, etc.).
+GhostFrame works with Electron-based applications including:
+- Visual Studio Code
+- Cursor
+- Discord
+- Slack
+- Obsidian
+- Notion
+- Figma
+- And many more...
 
-## 🏗 Building from Source
+## Important Notes
 
-Requirements: macOS 13.0+, Xcode 14+ (for Swift compiler).
+- **Restart Required**: Most changes require the target application to be fully restarted
+- **Electron Only**: GhostFrame supports applications built with the Electron framework
+- **macOS Security**: You may need to grant permissions in System Preferences > Privacy & Security
+
+## Building from Source
+
+**Requirements**: macOS 13.0+, Xcode Command Line Tools
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/GhostFrame.git
+git clone https://github.com/ghostframer/GhostFrame.git
 cd GhostFrame
 
 # Build the app
 ./build.sh
 
-# Create a release DMG
+# Install to Applications
+cp -r build/GhostFrame.app /Applications/
+
+# Create a release DMG (optional)
 ./release.sh
 ```
 
-## 📜 License
+## How It Works
+
+GhostFrame patches Electron applications by injecting `setContentProtection(true)` into the app's main process. This uses macOS's native content protection API to prevent the window from being captured.
+
+For Dock hiding, it modifies the app's `Info.plist` to set `LSUIElement = true`.
+
+For background disguise, it changes the `process.title` to a system-like name.
+
+## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+## Author
+
+Created by [ghostframer](https://github.com/ghostframer)

@@ -511,7 +511,8 @@ struct PremiumHeaderView: View {
                let icon = NSImage(contentsOfFile: iconPath) {
                 Image(nsImage: icon)
                     .resizable()
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
                     .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
             }
             
@@ -576,90 +577,89 @@ struct AppTableRow: View {
                 if let icon = app.icon {
                     Image(nsImage: icon)
                         .resizable()
-                        .frame(width: 36, height: 36)
+                        .frame(width: 38, height: 38)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                         .shadow(color: .black.opacity(0.1), radius: 2)
                 }
                 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(app.name)
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(theme.textColor)
+                        .lineLimit(1)
                     
-                    if app.isRunning {
-                        Text("Running")
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(app.isRunning ? Color.green : Color.gray)
+                            .frame(width: 6, height: 6)
+                        Text(app.isRunning ? "Running" : "Offline")
                             .font(.system(size: 11))
-                            .foregroundColor(.green)
-                    } else {
-                        Text("Offline")
-                            .font(.system(size: 11))
-                            .foregroundColor(theme.secondaryTextColor)
+                            .foregroundColor(app.isRunning ? .green : theme.secondaryTextColor)
                     }
                 }
             }
-            .frame(width: 250, alignment: .leading)
+            .frame(width: 200, alignment: .leading)
             
             Spacer()
             
             // Toggles
             HStack(spacing: 0) {
-                HStack {
-                    LiquidGlassCheckbox(isOn: Binding(
-                        get: { app.invisibility },
-                        set: { v in app.invisibility = v; if app.isEnabled { _ = app.applyProtection() } }
-                    ), disabled: !app.isEnabled)
-                }
-                .frame(width: 80)
+                LiquidGlassCheckbox(isOn: Binding(
+                    get: { app.invisibility },
+                    set: { v in app.invisibility = v; if app.isEnabled { _ = app.applyProtection() } }
+                ), disabled: !app.isEnabled)
+                .frame(width: 100)
                 
-                HStack {
-                    LiquidGlassCheckbox(isOn: Binding(
-                        get: { app.hideDock },
-                        set: { v in app.hideDock = v; if app.isEnabled { _ = app.applyProtection(); showRestartAlert = true } }
-                    ), disabled: !app.isEnabled)
-                }
-                .frame(width: 80)
+                LiquidGlassCheckbox(isOn: Binding(
+                    get: { app.hideDock },
+                    set: { v in app.hideDock = v; if app.isEnabled { _ = app.applyProtection(); showRestartAlert = true } }
+                ), disabled: !app.isEnabled)
+                .frame(width: 70)
                 
-                HStack {
-                    LiquidGlassCheckbox(isOn: Binding(
-                        get: { app.hideBackground },
-                        set: { v in app.hideBackground = v; if app.isEnabled { _ = app.applyProtection() } }
-                    ), disabled: !app.isEnabled)
-                }
-                .frame(width: 80)
+                LiquidGlassCheckbox(isOn: Binding(
+                    get: { app.hideBackground },
+                    set: { v in app.hideBackground = v; if app.isEnabled { _ = app.applyProtection() } }
+                ), disabled: !app.isEnabled)
+                .frame(width: 100)
             }
             
             Spacer()
             
             // Status & Actions
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 LiquidGlassToggle(isOn: Binding(
                     get: { app.isEnabled },
                     set: { v in app.isEnabled = v; _ = app.applyProtection(); if v { showRestartAlert = true } }
                 ))
+                .frame(width: 70)
                 
                 Menu {
-                    Button("Restart App", action: { app.restart() })
-                    Button("Reveal in Finder", action: { app.revealInFinder() })
+                    Button(action: { app.restart() }) {
+                        Label("Restart App", systemImage: "arrow.clockwise")
+                    }
+                    Button(action: { app.revealInFinder() }) {
+                        Label("Reveal in Finder", systemImage: "folder")
+                    }
                     Divider()
-                    Button("Remove", role: .destructive, action: onRemove)
+                    Button(role: .destructive, action: onRemove) {
+                        Label("Remove", systemImage: "trash")
+                    }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16))
-                        .foregroundColor(theme.secondaryTextColor)
-                        .frame(width: 30, height: 30)
-                        .background(
-                            Circle()
-                                .fill(isHovering ? Color.white.opacity(0.1) : Color.clear)
-                        )
+                    Image(systemName: "ellipsis.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(isHovering ? theme.textColor : theme.secondaryTextColor)
+                        .symbolRenderingMode(.hierarchical)
                 }
                 .menuStyle(.borderlessButton)
+                .frame(width: 60)
             }
-            .frame(width: 120, alignment: .trailing)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(isHovering ? theme.surfaceColor : Color.clear)
+                .animation(.easeInOut(duration: 0.15), value: isHovering)
         )
         .onHover { isHovering = $0 }
         .alert("Restart Required", isPresented: $showRestartAlert) {
@@ -675,31 +675,48 @@ struct AvailableAppRow: View {
     let app: AvailableApp
     let onAdd: () -> Void
     @State private var isHovering = false
+    @State private var isButtonHovering = false
     @ObservedObject var theme = ThemeManager.shared
     
     var body: some View {
-        HStack {
+        HStack(spacing: 14) {
             Image(nsImage: app.icon)
                 .resizable()
-                .frame(width: 28, height: 28)
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+            
             Text(app.name)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(theme.textColor)
+            
             Spacer()
+            
             Button(action: onAdd) {
-                Text("Add")
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(Color.accentColor.opacity(0.1))
-                    .foregroundColor(.accentColor)
-                    .cornerRadius(8)
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Add")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isButtonHovering ? Color.accentColor : Color.accentColor.opacity(0.15))
+                )
+                .foregroundColor(isButtonHovering ? .white : .accentColor)
             }
             .buttonStyle(.plain)
+            .onHover { isButtonHovering = $0 }
+            .animation(.easeInOut(duration: 0.15), value: isButtonHovering)
         }
-        .padding(12)
-        .background(isHovering ? theme.surfaceColor : Color.clear)
-        .cornerRadius(8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isHovering ? theme.surfaceColor : Color.clear)
+                .animation(.easeInOut(duration: 0.15), value: isHovering)
+        )
         .onHover { isHovering = $0 }
     }
 }
@@ -729,24 +746,27 @@ struct MainWindowView: View {
                             .font(.system(size: 11, weight: .bold))
                             .tracking(1.0)
                             .foregroundColor(theme.secondaryTextColor)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, 32)
                         
                         // Header
                         HStack(spacing: 0) {
                             Text("APPLICATION").font(.system(size: 10, weight: .bold)).foregroundColor(theme.secondaryTextColor)
-                                .frame(width: 250, alignment: .leading)
+                                .frame(width: 200, alignment: .leading)
                             Spacer()
                             HStack(spacing: 0) {
-                                Text("INVIS").frame(width: 80)
-                                Text("DOCK").frame(width: 80)
-                                Text("BACKG").frame(width: 80)
+                                Text("INVISIBILITY").frame(width: 100)
+                                Text("DOCK").frame(width: 70)
+                                Text("BACKGROUND").frame(width: 100)
                             }
                             .font(.system(size: 10, weight: .bold)).foregroundColor(theme.secondaryTextColor)
                             Spacer()
-                            Text("STATUS").font(.system(size: 10, weight: .bold)).foregroundColor(theme.secondaryTextColor)
-                                .frame(width: 120, alignment: .trailing)
+                            HStack(spacing: 0) {
+                                Text("STATUS").frame(width: 70)
+                                Text("ACTIONS").frame(width: 60)
+                            }
+                            .font(.system(size: 10, weight: .bold)).foregroundColor(theme.secondaryTextColor)
                         }
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, 32)
                         .padding(.bottom, 8)
                         
                         if appManager.managedApps.isEmpty {
@@ -761,7 +781,7 @@ struct MainWindowView: View {
                             .padding(40)
                             .background(theme.surfaceColor.opacity(0.3))
                             .cornerRadius(12)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, 32)
                         } else {
                             VStack(spacing: 0) {
                                 ForEach(appManager.managedApps) { app in
@@ -769,7 +789,7 @@ struct MainWindowView: View {
                                         appManager.removeApp(app)
                                     }
                                     if app.id != appManager.managedApps.last?.id {
-                                        Divider().background(theme.dividerColor).padding(.horizontal, 24)
+                                        Divider().background(theme.dividerColor).padding(.horizontal, 32)
                                     }
                                 }
                             }
@@ -800,7 +820,7 @@ struct MainWindowView: View {
                             .cornerRadius(8)
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.05), lineWidth: 1))
                         }
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, 32)
                         
                         LazyVStack(spacing: 4) {
                             ForEach(filteredAvailableApps) { app in
@@ -809,7 +829,7 @@ struct MainWindowView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 20)
                     }
                 }
                 .padding(.vertical, 24)
